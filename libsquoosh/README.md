@@ -4,6 +4,14 @@ libSquoosh is an _experimental_ way to run all the codecs you know from the [Squ
 
 libSquoosh is currently not the fastest image compression tool in town and doesn’t aim to be. It is, however, fast enough to compress many images sufficiently quick at once.
 
+## Recommended Mod for Node.JS 18 compatibility
+@squoosh/lib node module runs fine in Node.JS 16, but fails in Node.JS 18, owing to `fetch` issues loading the WASM modules. Hence, my mod is simply to document the workaround to **make it work in Node.JS 18** =) Plus a minor correction in sample codes for the 'Writing encoded images to the file system' example.
+
+Simply edit the downloaded `@squoosh/lib/build/index.js` to insert `const fetch=0;` right after the `'use strict';` in the 1st line, so as to disable the use of native fetch API. Like this:
+```js
+'use strict';const fetch=0;Object.defineProperty //...rest of long, minified line omitted for brevity
+```
+
 ## Installation
 
 libSquoosh can be installed to your local project with the following command:
@@ -88,9 +96,10 @@ When you have encoded an image, you normally want to write it to a file.
 This example takes an image that has been encoded as a `jpg` and writes it to a file:
 
 ```js
-const rawEncodedImage = image.encodedWith.mozjpeg.binary;
-
-fs.writeFile('/path/to/new/image.jpg', rawEncodedImage);
+const rawEncodedImage = image.encodedWith.mozjpeg;
+rawEncodedImage.then((img) => {
+    fs.writeFile('./public/image-out.jpg', img.binary);
+});
 ```
 
 This example iterates through all encoded versions of the image and writes them to a specific path:
@@ -99,7 +108,9 @@ This example iterates through all encoded versions of the image and writes them 
 const newImagePath = '/path/to/image.'; //extension is added automatically
 
 for (const encodedImage of Object.values(image.encodedWith)) {
-  fs.writeFile(newImagePath + encodedImage.extension, encodedImage.binary);
+    encodedImage.then((img) => {
+        fs.writeFile(newImagePath + img.extension, img.binary);
+    });
 }
 ```
 
