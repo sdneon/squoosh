@@ -4,12 +4,49 @@ libSquoosh is an _experimental_ way to run all the codecs you know from the [Squ
 
 libSquoosh is currently not the fastest image compression tool in town and doesn’t aim to be. It is, however, fast enough to compress many images sufficiently quick at once.
 
-## Recommended Mod for Node.JS 18 compatibility
+## Essential Mods for Node.JS 18 compatibility and Encoding to AVIF
 @squoosh/lib node module runs fine in Node.JS 16, but fails in Node.JS 18, owing to `fetch` issues loading the WASM modules. Hence, my mod is simply to document the workaround to **make it work in Node.JS 18** =) Plus a minor correction in sample codes for the 'Writing encoded images to the file system' example.
 
-Simply edit the downloaded `@squoosh/lib/build/index.js` to insert `const fetch=0;` right after the `'use strict';` in the 1st line, so as to disable the use of native fetch API. Like this:
+1. Simply edit the downloaded `@squoosh/lib/build/index.js` & `avif_node_enc_mt-143090b9.js` to insert `const fetch=0;` right after the `'use strict';` in the 1st line, so as to disable the use of native fetch API. Like this:
 ```js
-'use strict';const fetch=0;Object.defineProperty //...rest of long, minified line omitted for brevity
+'use strict';const fetch=0;Object.defineProperty //...rest of long, minified line of index.js omitted for brevity
+```
+2. In addition, another patch couple of patches are needed for encoding to AVIF.
+   a. For simplicity, I've uploaded the entire `@squoosh\lib` node module (including WASM's and dependencies) (as downloaded and installed by npm) with my mods in `dist` folder.
+   b. Patch 1: `avif_node_enc_mt.worker-be931951.js` needs to check for null `parentPort` before using it, as it is only available in worker threads. Unminified patch illustrated below:
+```js
+var Module = {};
+if (typeof process === "object" && typeof process.versions === "object" && typeof process.versions.node === "string") {
+    var nodeWorkerThreads = require$$0__default["default"];
+    var parentPort = nodeWorkerThreads.parentPort;
+    if (parentPort) //<-- add this check
+    {
+        parentPort.on("message", function(data) {
+            onmessage({
+                data: data
+            })
+        });
+    }
+    var nodeFS = require$$1__default["default"];
+```
+   c. Patch 2: Node.JS' `lib\internal\modules\cjs\loader.js` `_resolveFilename` method needs a patch to detect and fix bad `request` paths in the form of `c:\c:\...` to `c:\...`, to avoid inexplicable AVIF module load failure. 
+   
+   Unfortunately, this requires a rebuild of node.exe. I'll likely release this patch in my [Node.JS+ mod](https://github.com/sdneon/node) for 18.9.1+.
+   
+   Notice the (commented out) error trace below. Was trying to find the offending code making the bad request, but failed to find it. The trace just showed a root ESM load promise, with no useful clues whatsoever. 
+```js
+Module._resolveFilename = function(request, parent, isMain, options) {
+  //v-- add this patch
+  if ( (typeof request === 'string') && (request.length >= 6)
+    && (request[1] === ':')
+    //&& (request.substring(3).startsWith(request.substring(0,3)))
+    && (request[0] === request[3]) && (request[1] === request[4])
+  )
+  { //fix bad request like 'c:\c:\...'
+    request = request.substring(3);
+    //console.log((new Error('trace')).stack); //<-- try to find source of error but failed
+  }
+  if (...
 ```
 
 ## Installation
@@ -68,14 +105,19 @@ await image.preprocess(preprocessOptions);
 
 const encodeOptions = {
   mozjpeg: {}, //an empty object means 'use default settings'
+  avif: {
+      cqLevel: 10
+  },
   jxl: {
     quality: 90,
-  },
+  }
 };
 const result = await image.encode(encodeOptions);
 ```
 
 The default values for each option can be found in the [`codecs.ts`][codecs.ts] file under `defaultEncoderOptions`. Every unspecified value will use the default value specified there. _Better documentation is needed here._
+
+The AVIF options seem to be in [avif_enc.cpp](../codecs/avif/enc/avif_enc.cpp).
 
 You can run your own code inbetween the different steps, if, for example, you want to change how much the image should be resized based on its original height. (See [Extracting image information](#extracting-image-information) to learn how to get the image dimensions).
 
